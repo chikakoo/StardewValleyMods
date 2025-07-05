@@ -295,20 +295,29 @@ public class ModEntry : Mod
 
     private Item GetHoveredItemFromMenu(IClickableMenu menu)
     {
-        // game menu
         if (menu is GameMenu gameMenu)
         {
-            IClickableMenu page = this.Helper.Reflection.GetField<List<IClickableMenu>>(gameMenu, "pages").GetValue()[gameMenu.currentTab];
+            IClickableMenu page = Helper.Reflection
+                .GetField<List<IClickableMenu>>(gameMenu, "pages")
+                .GetValue()[gameMenu.currentTab];
             if (page is InventoryPage)
-                return this.Helper.Reflection.GetField<Item>(page, "hoveredItem").GetValue();
+            {
+                return Helper.Reflection
+                    .GetField<Item>(page, "hoveredItem")
+                    .GetValue();
+            }
         }
-        // from inventory UI (so things like shops and so on)
+        else if (menu is ShopMenu shopMenu && 
+            shopMenu?.hoveredItem?.QualifiedItemId != default)
+        {
+            return ItemRegistry.Create(shopMenu.hoveredItem.QualifiedItemId);
+        }
         else if (menu is MenuWithInventory inventoryMenu)
         {
             return inventoryMenu.hoveredItem;
         }
 
-        return null;
+        return default;
     }
 
     private Item GetHoveredItemFromToolbar()
