@@ -235,14 +235,10 @@ namespace StardewValleyBundleTooltips
                 //format of the values are itemID itemAmount itemQuality
                 string[] split = keyValuePair.Key.Split('/');
                 string bundleName = split[0];
-                string bundleSubName = keyValuePair.Value.Split('/')[0];
+                bundleName = Game1.content.LoadString("Strings\\Locations:CommunityCenter_AreaName_" + bundleName.Replace(" ", ""));
 
-                if (LocalizedContentManager.CurrentLanguageCode != LocalizedContentManager.LanguageCode.en)
-                {
-                    bundleName = Game1.content.LoadString("Strings\\Locations:CommunityCenter_AreaName_" + bundleName.Replace(" ", ""));
-                    string[] splitBundleSubName = keyValuePair.Value.Split('/');
-                    bundleSubName = splitBundleSubName[splitBundleSubName.Length - 1].Replace("\n","");
-                }
+                string[] splitBundleSubName = keyValuePair.Value.Split('/');
+                string bundleSubName = splitBundleSubName[splitBundleSubName.Length - 1].Replace("\n","");
 
                 int bundleIndex = Convert.ToInt32(split[1]);
 
