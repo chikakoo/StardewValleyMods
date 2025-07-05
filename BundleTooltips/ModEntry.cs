@@ -37,11 +37,28 @@ public class ModEntry : Mod
     /// </summary>
     private bool IsUiInfoSuiteLoaded;
 
-    Item ToolbarItem;
-    List<string> ItemIdsInBundles = [];
-    Dictionary<int, List<BundleItem>> Bundles;
-    Dictionary<int, RoomAndBundleName> RoomAndBundleNames;
+    /// <summary>
+    /// A mapping of all seed ids to the crops they grow
+    /// To efficiently look up what seeds crops come from
+    /// 
+    /// Used to display on seed items so you know whether it's worth buying 
+    /// for the community center
+    /// </summary>
+    private readonly Dictionary<string, string> SeedToCropMap = [];
 
+    /// <summary>
+    /// A mapping of all crop ids to the seeds they grow
+    /// To efficiently look up what seeds crops come from
+    /// 
+    /// Used to display on seed items so you know whether a seed maker can be used to get an item
+    /// for the community center
+    /// </summary>
+    private readonly Dictionary<string, string> CropToSeedMap = [];
+
+    private Item ToolbarItem;
+    private List<string> ItemIdsInBundles = [];
+    private Dictionary<int, List<BundleItem>> Bundles = [];
+    private readonly Dictionary<int, RoomAndBundleName> RoomAndBundleNames = [];
 
     /*********
     ** Public methods
@@ -71,10 +88,37 @@ public class ModEntry : Mod
     /// 
     private void SaveEvents_AfterLoad(object sender, SaveLoadedEventArgs e)
     {
-        // This will be filled with the itemIDs of every item in every bundle (for a fast search without details)
+        PopulateCropDataCache();
         ItemIdsInBundles = [];
         Bundles = GetBundles();
         IsLoaded = true;
+    }
+
+    /// <summary>
+    /// Fills the crop to seed/seed to crop data so we can cache them for
+    /// quick lookups
+    /// </summary>
+    private void PopulateCropDataCache()
+    {
+        var allCropData = DataLoader.Crops(Game1.content);
+        SeedToCropMap.Clear();
+        CropToSeedMap.Clear();
+
+        foreach(var cropDataKV in allCropData)
+        {
+            var seedId = cropDataKV.Key;
+            var cropData = cropDataKV.Value;
+
+            if (cropData != default && !string.IsNullOrWhiteSpace(cropData.HarvestItemId))
+            {
+                var cropId = cropData.HarvestItemId;
+                if (cropId != seedId) // Coffee beans, specifically
+                {
+                    SeedToCropMap.Add(seedId, cropId);
+                    CropToSeedMap.Add(cropId, seedId);
+                }
+            }
+        }
     }
 
     private void GraphicsEvents_OnPreRenderHudEvent(object sender, RenderingHudEventArgs e)
@@ -85,34 +129,89 @@ public class ModEntry : Mod
 
     private void GraphicsEvents_OnPostRenderHudEvent(object sender, RenderedHudEventArgs e)
     {
-        if (IsLoaded && !Game1.MasterPlayer.mailReceived.Contains("JojaMember") && Game1.activeClickableMenu == null && ToolbarItem != null)
+        if (IsLoaded &&
+            !Game1.MasterPlayer.mailReceived.Contains("JojaMember") &&
+            Game1.activeClickableMenu == null &&
+            ToolbarItem != null)
         {
-            PopulateHoverTextBoxAndDraw(ToolbarItem,true);
+            ShowTooltipForItem(ToolbarItem, isItFromToolbar: true);
             ToolbarItem = null;
         }
     }
 
     private void GraphicsEvents_OnPostRenderGuiEvent(object sender, RenderedActiveMenuEventArgs e)
     {
-        if (IsLoaded && !Game1.MasterPlayer.mailReceived.Contains("JojaMember") && Game1.activeClickableMenu != null)
+        if (IsLoaded &&
+            !Game1.MasterPlayer.mailReceived.Contains("JojaMember") &&
+            Game1.activeClickableMenu != null)
         {
-            Item item = this.GetHoveredItemFromMenu(Game1.activeClickableMenu);
+            Item item = GetHoveredItemFromMenu(Game1.activeClickableMenu);
             if (item != null)
-                PopulateHoverTextBoxAndDraw(item,false);
+            {
+                ShowTooltipForItem(item, isItFromToolbar: false);
+            }
         }
     }
 
-    private void PopulateHoverTextBoxAndDraw(Item item, bool isItFromToolbar)
+    /// <summary>
+    /// Shows a hover text box for the given item
+    /// This handles crops and seeds
+    /// - Shows the tooltip for a hovered crop if a seed is required
+    /// - Shows the tooltip for a hovered seed if a crop is required
+    /// </summary>
+    /// <param name="item">The hovered over item</param>
+    /// <param name="isItFromToolbar">Whether we're hoving over a toolbar</param>
+    private void ShowTooltipForItem(
+        Item item,
+        bool isItFromToolbar)
+    {
+        const string seedPrefix = "Seed";
+        const string cropPrefix = "Crop";
+
+        var tooltipDataByRoom = GetTooltipData(item);
+
+        if (CropToSeedMap.ContainsKey(item.ItemId))
+        {
+            GetTooltipData(
+                ItemRegistry.Create(CropToSeedMap[item.ItemId]),
+                tooltipDataByRoom,
+                seedPrefix);
+        }
+        else if (SeedToCropMap.ContainsKey(item.ItemId))
+        {
+            GetTooltipData(
+                ItemRegistry.Create(SeedToCropMap[item.ItemId]),
+                tooltipDataByRoom,
+                cropPrefix);
+        }
+
+        DrawTooltip(item, isItFromToolbar, tooltipDataByRoom);
+    }
+
+    /// <summary>
+    /// Gets the data used to display the tooltip
+    /// </summary>
+    /// <param name="item">The hovered over item</param>
+    /// <param name="tooltipDataByRoom">
+    /// The current data for tooltips (default to null)
+    /// This will be added to if passed in
+    /// </param>
+    /// <param name="tooltipPrefix">The prefix to include in the tooltip, if any</param>
+    /// <returns>The tooltip data, mapping each room to the list of data to display for it</returns>
+    private Dictionary<string, List<ItemTooltipData>> GetTooltipData(
+        Item item,
+        Dictionary<string, List<ItemTooltipData>> tooltipDataByRoom = default,
+        string tooltipPrefix = "")
     {
         if (!ItemIdsInBundles.Any(
             id => item.QualifiedItemId == ItemRegistry.QualifyItemId(id)))
         {
-            return;
+            return [];
         }
 
-        CommunityCenter communityCenter = 
+        CommunityCenter communityCenter =
             Game1.getLocationFromName("CommunityCenter") as CommunityCenter;
-        Dictionary<string, List<ItemTooltipData>> tooltipDataByRoom = [];
+        tooltipDataByRoom ??= [];
 
         foreach (KeyValuePair<int, List<BundleItem>> bundleKV in Bundles)
         {
@@ -121,10 +220,12 @@ public class ModEntry : Mod
                 if (bundleItem == default) { continue; }
 
                 ItemQualities quality = bundleItem.ItemQuality;
-                
-                if ((item is SVObject svObject) && 
-                    item.Stack != 0 && 
-                    bundleItem.QualifiedItemId == item.QualifiedItemId) // Use this since normal Ids can overlap
+
+                if ((item is SVObject svObject) &&
+                    item.Stack != 0 &&
+
+                    // Use qualified ids since normal ids can overlap
+                    bundleItem.QualifiedItemId == item.QualifiedItemId)
                 {
                     var bundleId = bundleKV.Key;
                     var isItemInBundleSlot = communityCenter.bundles[bundleId][bundleItem.IndexInBundle];
@@ -141,7 +242,8 @@ public class ModEntry : Mod
                                 RoomName = RoomAndBundleNames[bundleId].RoomName,
                                 BundleName = RoomAndBundleNames[bundleId].BundleName,
                                 ItemQuality = bundleItem.ItemQuality,
-                                Amount = bundleItem.Amount
+                                Amount = bundleItem.Amount,
+                                TooltipPrefix = tooltipPrefix
                             }
                         );
                     }
@@ -149,10 +251,21 @@ public class ModEntry : Mod
             }
         }
 
-        if (tooltipDataByRoom.Count == 0)
-        {
-            return;
-        }
+        return tooltipDataByRoom;
+    }
+
+    /// <summary>
+    /// Draws the tooltip for the hovered item
+    /// </summary>
+    /// <param name="item">The hovered over item</param>
+    /// <param name="isItFromToolbar">Whether we're hoving over a toolbar</param>
+    /// <param name="tooltipDataByRoom">The data to use for the tooltip</param>
+    private void DrawTooltip(
+        Item item,
+        bool isItFromToolbar,
+        Dictionary<string, List<ItemTooltipData>> tooltipDataByRoom)
+    {
+        if (tooltipDataByRoom.Count == 0) { return; }
 
         var tooltipText = "";
         foreach (var tooltipDataKV in tooltipDataByRoom)
@@ -163,9 +276,13 @@ public class ModEntry : Mod
             }
 
             tooltipText += $"{tooltipDataKV.Key}";
-            foreach(var tooltipData in tooltipDataKV.Value)
+            foreach (var tooltipData in tooltipDataKV.Value)
             {
-                tooltipText += $"\n {tooltipData.Amount} x {tooltipData.BundleName}";
+                var prefix = !string.IsNullOrWhiteSpace(tooltipData.TooltipPrefix)
+                    ? $"[{tooltipData.TooltipPrefix}] "
+                    : string.Empty;
+
+                tooltipText += $"\n {prefix}{tooltipData.Amount} x {tooltipData.BundleName}";
                 if (tooltipData.ItemQuality > 0)
                 {
                     tooltipText += $" ({tooltipData.ItemQuality})";
@@ -223,7 +340,7 @@ public class ModEntry : Mod
                 y += 95;
             else
                 y += 55;
-        }   
+        }
 
         if (x < 0)
             x = 0;
@@ -237,10 +354,11 @@ public class ModEntry : Mod
 
     private Dictionary<int, List<BundleItem>> GetBundles()
     {
-        Dictionary<string, string> dictionary = Game1.netWorldState.Value.BundleData;
+        ItemIdsInBundles.Clear();
+        RoomAndBundleNames.Clear();
 
+        Dictionary<string, string> dictionary = Game1.netWorldState.Value.BundleData;
         Dictionary<int, List<BundleItem>> bundles = [];
-        RoomAndBundleNames = [];
 
         foreach (KeyValuePair<string, string> keyValuePair in dictionary)
         {
@@ -250,7 +368,7 @@ public class ModEntry : Mod
                 .LoadString($"Strings\\Locations:CommunityCenter_AreaName_{split[0].Replace(" ", "")}");
 
             string[] bundleDataTokens = keyValuePair.Value.Split('/');
-            string bundleName = bundleDataTokens[^1].Replace("\n","");
+            string bundleName = bundleDataTokens[^1].Replace("\n", "");
             int bundleIndex = Convert.ToInt32(split[1]);
 
             //if bundleIndex is between 23 and 26, then they're vault bundles so don't add to dictionary
@@ -259,10 +377,10 @@ public class ModEntry : Mod
                 //creating an array of items[i][j] , i is the item index, j=0 itemId, j=1 itemAmount, j=2 itemQuality, j=3 order of the item for its own bundle
                 string[] allItems = bundleDataTokens[2].Split(' ');
                 int allItemsLength = allItems.Length / 3;
-                
+
                 List<BundleItem> bundleItems = [];
 
-                for(int j = 0, i = 0; j < allItemsLength; j++, i += 3)
+                for (int j = 0, i = 0; j < allItemsLength; j++, i += 3)
                 {
                     BundleItem bundleItem = new(
                         id: allItems[i],
