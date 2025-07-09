@@ -203,8 +203,9 @@ public class ModEntry : Mod
         Dictionary<string, List<ItemTooltipData>> tooltipDataByRoom = default,
         string tooltipPrefix = "")
     {
-        if (!ItemIdsInBundles.Any(
-            id => item.QualifiedItemId == ItemRegistry.QualifyItemId(id)))
+        if (item.IsRecipe ||
+            !ItemIdsInBundles.Any(id =>
+                item.QualifiedItemId == ItemRegistry.QualifyItemId(id)))
         {
             return [];
         }
@@ -310,7 +311,9 @@ public class ModEntry : Mod
         else if (menu is ShopMenu shopMenu && 
             shopMenu?.hoveredItem?.QualifiedItemId != default)
         {
-            return ItemRegistry.Create(shopMenu.hoveredItem.QualifiedItemId);
+            var item = ItemRegistry.Create(shopMenu.hoveredItem.QualifiedItemId);
+            item.IsRecipe = shopMenu.hoveredItem.IsRecipe;
+            return item;
         }
         else if (menu is MenuWithInventory inventoryMenu)
         {
