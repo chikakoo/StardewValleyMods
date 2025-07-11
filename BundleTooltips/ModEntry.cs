@@ -9,7 +9,6 @@ using StardewValley.Menus;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using SVObject = StardewValley.Object;
 
 //Created by Musbah Sinno
 
@@ -204,7 +203,7 @@ public class ModEntry : Mod
         string tooltipPrefix = "")
     {
         if (!ItemIdsInBundles.Any(
-            id => item.QualifiedItemId == ItemRegistry.QualifyItemId(id)))
+            id => item.QualifiedItemId == id))
         {
             return [];
         }
@@ -221,10 +220,8 @@ public class ModEntry : Mod
 
                 ItemQualities quality = bundleItem.ItemQuality;
 
-                if ((item is SVObject svObject) &&
-                    item.Stack != 0 &&
-
-                    // Use qualified ids since normal ids can overlap
+                // Use qualified ids since normal ids can overlap
+                if (item.Stack != 0 &&
                     bundleItem.QualifiedItemId == item.QualifiedItemId)
                 {
                     var bundleId = bundleKV.Key;
@@ -398,7 +395,7 @@ public class ModEntry : Mod
                         indexInBundle: i / 3
                     );
                     bundleItems.Add(bundleItem);
-                    ItemIdsInBundles.Add(bundleItem.Id);
+                    ItemIdsInBundles.Add(bundleItem.QualifiedItemId);
                 }
 
                 bundles.Add(bundleIndex, bundleItems);
